@@ -20,7 +20,7 @@
           v-for="todo in todos" 
           :key="todo.id"
           class="todo-item"
-          :class="{ completed: todo.completed }"
+          :class="{ completed: todo.completed, selected: todo.selected }"
         >
           <div class="drag-handle">⋮⋮</div>
           <input 
@@ -29,8 +29,46 @@
             @change="saveTodos"
             class="todo-checkbox"
           />
-          <span class="todo-text">{{ todo.text }}</span>
+          <span 
+            v-if="!todo.editing" 
+            @click="startEdit(todo)" 
+            class="todo-text"
+          >
+            {{ todo.text }}
+          </span>
+          <input 
+            v-else
+            v-model="todo.text"
+            @blur="finishEdit(todo)"
+            @keyup.enter="finishEdit(todo)"
+            @keyup.esc="cancelEdit(todo)"
+            class="todo-edit-input"
+            ref="editInput"
+          />
           <button @click="deleteTodo(todo.id)" class="delete-btn">🗑️</button>
+        </div>
+      </div>
+
+      <!-- 批量操作 -->
+      <div class="batch-operations" v-if="todos.length > 0">
+        <div class="batch-controls">
+          <label class="select-all">
+             <input 
+               type="checkbox" 
+               :checked="isAllCompleted"
+               @change="toggleCompleteAll"
+               class="select-all-checkbox"
+             />
+             <span>{{ isAllCompleted ? '全部未完成' : '全部完成' }}</span>
+           </label>
+           <button 
+             @click="deleteCompleted"
+             :disabled="completedCount === 0"
+             class="batch-delete-btn"
+             :class="{ disabled: completedCount === 0 }"
+           >
+             删除已完成 ({{ completedCount }})
+           </button>
         </div>
       </div>
 
@@ -69,6 +107,10 @@ export default {
       todos.value.filter(todo => !todo.completed).length
     )
 
+    const isAllCompleted = computed(() => 
+      todos.value.length > 0 && todos.value.every(todo => todo.completed)
+    )
+
     // 从localStorage加载数据
     const loadTodos = () => {
       const saved = localStorage.getItem('vue-todos')
@@ -89,6 +131,9 @@ export default {
           id: Date.now(),
           text: newTodo.value.trim(),
           completed: false,
+
+          editing: false,
+          originalText: '',
           createdAt: new Date().toISOString()
         }
         todos.value.push(todo)
@@ -101,6 +146,59 @@ export default {
     const deleteTodo = (id) => {
       todos.value = todos.value.filter(todo => todo.id !== id)
       saveTodos()
+    }
+
+    // 开始编辑
+    const startEdit = (todo) => {
+      todo.originalText = todo.text
+      todo.editing = true
+      nextTick(() => {
+        const editInputs = document.querySelectorAll('.todo-edit-input')
+        const currentInput = Array.from(editInputs).find(input => 
+          input.value === todo.text
+        )
+        if (currentInput) {
+          currentInput.focus()
+          currentInput.select()
+        }
+      })
+    }
+
+    // 完成编辑
+    const finishEdit = (todo) => {
+      if (todo.text.trim()) {
+        todo.editing = false
+        saveTodos()
+      } else {
+        todo.text = todo.originalText
+        todo.editing = false
+      }
+    }
+
+    // 取消编辑
+    const cancelEdit = (todo) => {
+      todo.text = todo.originalText
+      todo.editing = false
+    }
+
+    // 全部完成/全部未完成
+    const toggleCompleteAll = () => {
+      const completeAll = !isAllCompleted.value
+      todos.value.forEach(todo => {
+        todo.completed = completeAll
+      })
+      saveTodos()
+    }
+
+    // 删除已完成项
+    const deleteCompleted = () => {
+      if (completedCount.value === 0) return
+      
+      const confirmed = confirm(`确定要删除已完成的 ${completedCount.value} 个待办事项吗？`)
+      if (confirmed) {
+        todos.value = todos.value.filter(todo => !todo.completed)
+        saveTodos()
+      }
     }
 
     // 初始化拖拽功能
@@ -138,9 +236,15 @@ export default {
       todoList,
       completedCount,
       remainingCount,
+      isAllCompleted,
       addTodo,
       deleteTodo,
-      saveTodos
+      saveTodos,
+      startEdit,
+      finishEdit,
+      cancelEdit,
+      toggleCompleteAll,
+      deleteCompleted
     }
   }
 }
@@ -176,7 +280,7 @@ export default {
   box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.1);
   padding: 40px;
   width: 100%;
-  max-width: 600px;
+  max-width: 800px;
   margin: 20px;
 }
 
@@ -301,6 +405,8 @@ export default {
   color: #6c757d;
 }
 
+
+
 .drag-handle {
   cursor: grab;
   color: #6c757d;
@@ -325,6 +431,33 @@ export default {
   font-size: 16px;
   color: #333;
   word-break: break-word;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.todo-text:hover {
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+}
+
+.todo-edit-input {
+  flex: 1;
+  font-size: 16px;
+  color: #333;
+  border: 2px solid #667eea;
+  border-radius: 8px;
+  padding: 8px 12px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.9);
+  transition: all 0.2s ease;
+}
+
+.todo-edit-input:focus {
+  border-color: #4ecdc4;
+  box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.2);
+  background: white;
 }
 
 .delete-btn {
@@ -351,6 +484,69 @@ export default {
   margin-top: 20px;
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.batch-operations {
+  margin: 20px 0;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(255, 107, 107, 0.1), rgba(78, 205, 196, 0.1));
+  border-radius: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+}
+
+.batch-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+}
+
+.select-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  color: #333;
+  transition: all 0.2s ease;
+}
+
+.select-all:hover {
+  color: #ff6b6b;
+}
+
+.select-all-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #ff6b6b;
+}
+
+.batch-delete-btn {
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #ff6b6b 0%, #ff8a80 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+}
+
+.batch-delete-btn:hover:not(.disabled) {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 8px 25px rgba(255, 107, 107, 0.4);
+  background: linear-gradient(135deg, #ff5252 0%, #ff7043 100%);
+}
+
+.batch-delete-btn.disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  box-shadow: none;
+  opacity: 0.6;
 }
 
 .stats span {
@@ -397,6 +593,17 @@ export default {
   
   .add-todo {
     flex-direction: column;
+  }
+  
+  .batch-controls {
+    flex-direction: column;
+    gap: 15px;
+    align-items: stretch;
+  }
+  
+  .batch-delete-btn {
+    width: 100%;
+    text-align: center;
   }
   
   .stats {
